@@ -3,6 +3,7 @@ name: IPA Down
 
 env:
   PYTHONIOENCODING: utf-8
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 # Allow Release
 permissions: write-all
@@ -58,7 +59,7 @@ jobs:
         shell: bash
 
       - name: Set up git repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Setup ipatool-py
         run: |
@@ -102,26 +103,29 @@ jobs:
 
             if [[ "$op" == "download" ]]; then
               output=$(python3 ipatool-py/main.py --json lookup -b ${{ github.event.inputs.appBundleId }} -c ${{ github.event.inputs.appCountry }} \
-                                                download -o ipaDown -s http://127.0.0.1:9000 $appVerCmd)
+                                                 download -o ipaDown -s http://127.0.0.1:9000 $appVerCmd)
             elif [[ "$op" == "download_id" ]]; then
               output=$(python3 ipatool-py/main.py --json download -o ipaDown -s http://127.0.0.1:9000 --appId ${{ github.event.inputs.appId }} $appVerCmd)
             fi
             echo "Got Downloading JSON result: $output"
-            echo "::set-output name=needIPARelease::1"
-            echo "::set-output name=appName::$(echo "$output" | jq -r '.appName')"
-            echo "::set-output name=appBundleId::$(echo "$output" | jq -r '.appBundleId')"
-            echo "::set-output name=appVer::$(echo "$output" | jq -r '.appVer')"
-            echo "::set-output name=appId::$(echo "$output" | jq -r '.appId')"
-            echo "::set-output name=appVerId::$(echo "$output" | jq -r '.appVerId')"
+            echo "needIPARelease=1" >> $GITHUB_OUTPUT
+            echo "appName=$(echo "$output" | jq -r '.appName')" >> $GITHUB_OUTPUT
+            echo "appBundleId=$(echo "$output" | jq -r '.appBundleId')" >> $GITHUB_OUTPUT
+            echo "appVer=$(echo "$output" | jq -r '.appVer')" >> $GITHUB_OUTPUT
+            echo "appId=$(echo "$output" | jq -r '.appId')" >> $GITHUB_OUTPUT
+            echo "appVerId=$(echo "$output" | jq -r '.appVerId')" >> $GITHUB_OUTPUT
           else
             echo "Unknown Operation: $op"
           fi
         shell: bash
         
       - name: "Upload package"
-        uses: NyaMisty/upload-artifact-as-is@master
+        if: ${{ steps.operation.outputs.needIPARelease == '1' }}
+        uses: actions/upload-artifact@v4
         with:
-          path: ipaDown\*
+          name: ipa-download
+          path: ipaDown/
+          if-no-files-found: warn
 
       - name: Split ipa
         if: ${{ steps.operation.outputs.needIPARelease == '1' }}
@@ -132,7 +136,7 @@ jobs:
         shell: bash
       
       - name: Pushing to release
-        if: ${{ steps.operation.outputs.needIPARelease == 1 }}
+        if: ${{ steps.operation.outputs.needIPARelease == '1' }}
         uses: ncipollo/release-action@v1
         with:
           name: "IPADown: ${{ steps.operation.outputs.appName }} - ${{ steps.operation.outputs.appVer }}"
@@ -146,7 +150,7 @@ jobs:
                 ) }}
           commit: ${{ github.sha }}
           tag: "${{ steps.operation.outputs.appBundleId }}-${{ steps.operation.outputs.appId }}-${{ steps.operation.outputs.appVerId }}"
-          artifacts: ipaDown_split\*
+          artifacts: ipaDown_split/*
 
           allowUpdates: true
           removeArtifacts: true
