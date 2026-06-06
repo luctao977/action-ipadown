@@ -103,17 +103,28 @@ jobs:
 
             if [[ "$op" == "download" ]]; then
               output=$(python3 ipatool-py/main.py --json lookup -b ${{ github.event.inputs.appBundleId }} -c ${{ github.event.inputs.appCountry }} \
-                                                 download -o ipaDown -s http://127.0.0.1:9000 $appVerCmd)
+                                                 download -o ipaDown -s http://127.0.0.1:9000 $appVerCmd 2>&1) || true
             elif [[ "$op" == "download_id" ]]; then
-              output=$(python3 ipatool-py/main.py --json download -o ipaDown -s http://127.0.0.1:9000 --appId ${{ github.event.inputs.appId }} $appVerCmd)
+              output=$(python3 ipatool-py/main.py --json download -o ipaDown -s http://127.0.0.1:9000 --appId ${{ github.event.inputs.appId }} $appVerCmd 2>&1) || true
             fi
             echo "Got Downloading JSON result: $output"
-            echo "needIPARelease=1" >> $GITHUB_OUTPUT
-            echo "appName=$(echo "$output" | jq -r '.appName')" >> $GITHUB_OUTPUT
-            echo "appBundleId=$(echo "$output" | jq -r '.appBundleId')" >> $GITHUB_OUTPUT
-            echo "appVer=$(echo "$output" | jq -r '.appVer')" >> $GITHUB_OUTPUT
-            echo "appId=$(echo "$output" | jq -r '.appId')" >> $GITHUB_OUTPUT
-            echo "appVerId=$(echo "$output" | jq -r '.appVerId')" >> $GITHUB_OUTPUT
+            
+            # Check if download actually produced files
+            ipaCount=$(find ipaDown -name "*.ipa" 2>/dev/null | wc -l)
+            echo "IPA files found: $ipaCount"
+            
+            if [[ "$ipaCount" -gt 0 ]]; then
+              echo "needIPARelease=1" >> $GITHUB_OUTPUT
+              echo "appName=$(echo "$output" | jq -r '.appName // empty')" >> $GITHUB_OUTPUT
+              echo "appBundleId=$(echo "$output" | jq -r '.appBundleId // empty')" >> $GITHUB_OUTPUT
+              echo "appVer=$(echo "$output" | jq -r '.appVer // empty')" >> $GITHUB_OUTPUT
+              echo "appId=$(echo "$output" | jq -r '.appId // empty')" >> $GITHUB_OUTPUT
+              echo "appVerId=$(echo "$output" | jq -r '.appVerId // empty')" >> $GITHUB_OUTPUT
+            else
+              echo "::error::Download failed! No IPA files produced. Check if the app is available in your Apple ID's region."
+              echo "needIPARelease=0" >> $GITHUB_OUTPUT
+              exit 1
+            fi
           else
             echo "Unknown Operation: $op"
           fi
